@@ -1,0 +1,4 @@
+.DS_Store
+config.js
+*.sublime-*
+node_modules/
