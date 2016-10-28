@@ -2,3 +2,4 @@
 config.js
 *.sublime-*
 node_modules/
+tmp/

@@ -56,6 +56,8 @@ var branchNameFormula = function(ticketNumber, description) {
 // Start the program
 function init() {
 
+	setSprint();
+
 	// Display the title
 	clear();
 	log(
@@ -63,7 +65,8 @@ function init() {
 	    figlet.textSync('workflow', { horizontalLayout: 'full' })
 	  )
 	);
-	log('Working from the ' + repoCursor + ' repo');
+	log('Repository: ' + repoCursor);
+	log('Sprint: ' + sprint);
 
 	if (!prefs.lastUpdated) {
 		preferencesMenu(function() {
@@ -88,8 +91,12 @@ function setRepoCursorByName(name) {
 }
 
 function setSprint(val) {
-	sprint = val;
-	return sprint;
+	if (!val) {
+		sprint = prefs.sprint || '1.0';
+	} else {
+		sprint = val;		
+	}
+	prefs.sprint = sprint;
 }
 
 function createBranch(cb) {
@@ -174,7 +181,7 @@ function mergeBranch(cb) {
 		{
 			type: 'input',
 			name: 'number',
-			message: 'Ticket Number:',
+			message: 'Ticket Number (FULL BRANCH NAME):',
 			
 			// For now, require the full name of the branch
 			// TODO: in the future, ticket/branch will have already been accepted by the time the user gets to this menu
@@ -186,6 +193,12 @@ function mergeBranch(cb) {
 					return 'Please enter an integer value';
 				}
 			}*/
+		},
+		{
+			type: 'input',
+			name: 'commitMsg',
+			message: 'Commit message:'
+			// TODO: validate to make sure a message is entered and length is not greater than the maximum commit message length
 		},
 		{
 			type: 'input',
@@ -210,7 +223,8 @@ function mergeBranch(cb) {
 		{
 			type: 'input',
 			name: 'reported',
-			message: 'Reported By:'
+			message: 'Reported By:',
+			default: null
 		}
 	];
 
@@ -218,6 +232,7 @@ function mergeBranch(cb) {
 
 		var data = {
 			ticketNumber: answers.number,
+			commitMsg: answers.commitMsg,
 			mergeTitle: answers.merge,
 			mergeDescription: answers.description,
 			location: answers.location,
@@ -229,38 +244,62 @@ function mergeBranch(cb) {
 		var mergeTitle = sprint + ' ' + data.mergeTitle + ' re #' + ticketNumber;
 		var mergeDescription = 'test #' + ticketNumber + '\n' + data.mergeDescription;
 
+		var ticketDescription = 'TD: \n' +
+			'L:\n' + data.location + '\n\n' + 
+			'T:\n' + data.tests + '\n\n' +
+			data.reported != '' ? 'RB:\n' + data.reported : '';
+
 		var status = new Spinner('');
 		status.start();
 
-		git
-			.checkout('develop', function() {
-				log('pulling develop...');
-			})
-			.pull(function() {
-				log('merging develop...');
-			})
-			.checkout(data.ticketNumber)
-			.mergeFromTo('develop', data.ticketNumber, function() {
-				log('pushing to remote...');
-			})
+		// Edit the original ticket (TODO: publish this using the Assembla API)
+		fs.writeFile('tmp/merge-ticket.txt', ticketDescription, function(err) {
 
-			// TODO: check if remote exists before running this
-			/*.push(['-u', 'origin', data.ticketNumber], function () {
-				// done. 
-				log('success');
-			})*/
+			if (err) {
+				log(err);
+			}
 
-			//TODO: Cuz if it does exist, just do a regular ol push
-			/*.push('origin', data.ticketNumber, function() {
-				log('pushed :)');
-			})*/
+			// Push the changes
+			git
+				.checkout('develop', function() {
+					log('pulling develop...');
+				})
+				.pull(function() {
+					log('merging develop...');
+				})
+				.checkout(data.ticketNumber)
 
-			// TODO: make the actual merge request
-			.then(function() {
-				log('Created merge request');
-				status.stop();
-				return cb();
-			});
+				// TODO: only make a commit if there are files to commit
+				.add('.')
+				.commit(data.commitMsg)
+				.mergeFromTo('develop', data.ticketNumber, function() {
+					log('pushing to remote...');
+				})
+
+				// TODO: check if remote exists before running this
+				.push(['-u', 'origin', data.ticketNumber], function () {
+					// done. 
+					log('successfully pushed');
+				})
+
+				//TODO: Cuz if it does exist, just do a regular ol push
+				/*.push('origin', data.ticketNumber, function() {
+					log('pushed :)');
+				})*/
+
+				.then(function() {
+					log('Created merge request');
+
+					// Write the merge request details (TODO: Publish this using the Assembla API)
+					fs.writeFile('tmp/merge-request.txt', mergeTitle + '\n\n' + mergeDescription, function(err) {
+						if (err) {
+							log(err);
+						}
+						status.stop();
+						return cb();	
+					});
+				});
+		});
 	});
 }
 
@@ -339,8 +378,19 @@ function mainMenu() {
 	).then(function(choice) {
 		switch(choice.action) {
 			case 'sprint':
-				// TODO: select sprint/update to latest sprint
-				return;
+				// TODO: pull sprint from Assembla API
+				return inquirer.prompt(
+					[
+						{
+							type: 'input',
+							name: 'version',
+							message: displayValue('Set the sprint:', sprint),
+						}
+					]
+				).then(function(val) {
+					setSprint(val.version);
+					return mainMenu();
+				});
 			case 'repo':
 				return repoMenu(mainMenu);			
 			case 'tickets':
