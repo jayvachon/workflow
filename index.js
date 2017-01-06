@@ -83,6 +83,10 @@ function init() {
 	  )
 	);
 
+	git.status(function(err, res) {
+		logger.log(res);
+	});
+
 	// Update Assembla data
 	logger.log('Loading Assembla data...');
 	api.init(function(data) {
