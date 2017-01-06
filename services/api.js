@@ -63,10 +63,7 @@ var api = {
 	},
 
 	fetchTickets: function(cb) {
-		this.get('tickets?report=0', function(body) {
-			// tickets = JSON.parse(body);
-			// logger.log(tickets);
-			// logger.log(tickets.length);
+		this.get('tickets/my_active', function(body) {
 			cb(body);
 		});
 	},

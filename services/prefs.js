@@ -14,6 +14,8 @@ var prefs = {
 			space_tools: [],
 			users: [],
 		},
+		activeTicket: null,
+		myLocalBranches: [],
 	},
 
 	markUpdated: function() {
@@ -24,11 +26,17 @@ var prefs = {
 		this.initials = this.defaults.initials;
 		this.sprint = this.defaults.sprint;
 		this.repoCursor = this.defaults.repoCursor;
+		this.activeTicket = this.defaults.activeTicket;
+		this.myLocalBranches = this.defaults.myLocalBranches;
 		this.markUpdated();
 	},
 
 	findSpaceTool(repoName) {
 		return _.find(p.assembla.space_tools, function(n) { return n.url.indexOf(repoName) !== -1; });
+	},
+
+	findBranch(id) {
+		return _.find(p.myLocalBranches, function(n) { return n.indexOf(id) !== -1; });
 	},
 
 	print: function() {
@@ -63,6 +71,22 @@ Object.defineProperty(prefs, 'repoCursor', {
 Object.defineProperty(prefs, 'assembla', {
 	get: function() { return p.assembla; },
 	set: function(val) { p.assembla = val; },
+});
+
+Object.defineProperty(prefs, 'activeTicket', {
+	get: function() { return p.activeTicket; },
+	set: function(val) {
+		p.activeTicket = val;
+		this.markUpdated();
+	},
+});
+
+Object.defineProperty(prefs, 'myLocalBranches', {
+	get: function() { return p.myLocalBranches; },
+	set: function(val) {
+		p.myLocalBranches = val;
+		this.markUpdated();
+	},
 });
 
 Object.defineProperty(prefs, 'initialized', {

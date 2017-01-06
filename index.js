@@ -6,6 +6,8 @@
 
 // TODO: service to convert windows style paths to unix paths for gitk (file history)
 
+// TODO: flow = select a ticket to work on, then Workflow updates the branch
+
 var chalk       = require('chalk');
 var clear       = require('clear');
 var CLI         = require('clui');
@@ -83,16 +85,12 @@ function init() {
 	  )
 	);
 
-	git.status(function(err, res) {
-		logger.log(res);
-	});
-
 	// Update Assembla data
 	logger.log('Loading Assembla data...');
 	api.init(function(data) {
 
 		prefs.assembla = data;
-		logger.log('Got the data :)\n');
+		logger.log('Data loaded successfully! Welcome to Workflow :)\n');
 
 		// If this is the first time Workflow has been loaded, bring the user to the preferences menu
 		if (!prefs.initialized) {
@@ -106,22 +104,32 @@ function init() {
 			});
 		} else {
 
-			// Show sprint
-			logger.log('Sprint: ' + prefs.sprint);
-
-			// Show repository
+			// Set the working directory
 			setRepoCursorByName(prefs.repoCursor);
-			logger.log('Repository: ' + prefs.repoCursor);
 
-			// Show branch
-			git.revparse(['--abbrev-ref', '--quiet', 'HEAD'], function(err, res) {
+			// TODO: make sure branches are reloaded whenever the working directory/repo cursor is changed
+			loadLocalBranches(function() {
 				
-				if (err) {
-					return logger.error(err);
-				}
+				// Show sprint
+				logger.log(chalk.yellow('Sprint: ') + chalk.white(prefs.sprint));
 
-				logger.log('Branch: ' + res);
-				mainMenu();
+				// Show repository
+				logger.log(chalk.yellow('Repository: ') + chalk.white(prefs.repoCursor));
+
+				// Show active ticket
+				if (prefs.activeTicket)
+					logger.log(chalk.yellow('Active ticket: ') + chalk.white('#' + prefs.activeTicket.number + ': ' + prefs.activeTicket.summary));
+
+				// Show branch
+				git.revparse(['--abbrev-ref', '--quiet', 'HEAD'], function(err, res) {
+					
+					if (err) {
+						return logger.error(err);
+					}
+
+					logger.log(chalk.yellow('Branch: ') + chalk.white(res));
+					mainMenu();
+				});
 			});
 		}
 	});
@@ -137,6 +145,20 @@ function setRepoCursorByIndex(idx) {
 }
 function setRepoCursorByName(name) {
 	setRepoCursor(_.find(config.settings.repos, function(n) { return n.name == name; }));
+}
+function loadLocalBranches(cb) {
+	git.raw(['branch'], function(err, res) {
+		
+		if (err) {
+			return logger.error(err);
+		}
+
+		var arr = res.split('\n');
+		var branches = _.map(arr, function(n) { return n.replaceAll('remotes/origin/', '').replaceAll('\n', '').replaceAll(' ',''); });
+		prefs.myLocalBranches = _.filter(branches, function(n) { return n.startsWith(prefs.initials + '-'); });
+
+		cb();
+	});
 }
 
 function branchExists(branchName, cb) {
@@ -217,95 +239,91 @@ function createTicket(cb) {
 	});
 }
 
-function createBranch(cb) {
-	
-	var argv = require('minimist')(process.argv.slice(2));
+function mergeBranch(cb) {
 
-	/*branchExists('develop', function(hasBranch) {
-		log(hasBranch);
-	});*/
-
-	var questions = [
-		{
-			type: 'input',
-			name: 'number',
-			message: 'Ticket number:',
-			default: argv._[0] || null,
-			validate: function(val) {
-				if (val && val.match(/^\d+$/)) {
-					return true;
-				} else {
-					return 'Please enter an integer value';
-				}
-			}
-		},
-		{
-			type: 'input',
-			name: 'description',
-			message: 'Brief description:',
-			default: argv._[1] || null,
-			validate: function(val) {
-				if (val && val.length + prefs.initials.length + 4 < 50) {
-					return true;
-				} else {
-					return 'Please enter a shorter description. This will be the name of the branch.';
-				}
-			}
-		},
-		{
-			type: 'input',
-			name: 'parent',
-			message: 'Branch from:',
-			default: 'develop',
-			validate: function(val) {
-				var done = this.async();
-				branchExists(val, function(exists) {
-					if (!exists) {
-						done('No branch named ' + val + ' exists');
-					} else {
-						done(null, true);
-					}
-				});
-			}
-		},
-	];
-
-	inquirer.prompt(questions).then(function(answers) {
-
-		var data = {
-			number: answers.number,
-			description: answers.description,
-			parent: answers.parent,
+	git.status(function(err, res) {
+		if (err) {
+			return logger.error(err);
 		}
 
-		var branchName = branchNameFormula(data.number, data.description);
+		var questions = [
 
-		confirm('New branch will be called "' + branchName + '". Cool?')
-			.then(function confirmed() {
-				// Create the new branch
-				git
-					//.checkout(data.parent)
-					.checkout('develop')
-					.checkoutLocalBranch(branchName, function(err) {
-						if (err) {
-							// TODO: handle 'branch already exists error'
-							// example: A branch named 'jv-1000-test-it-now' already exists.
-							return cb(mainMenu);
-						}
-					})
-					.then(function() {
-						logger.info('Working from new branch ' + branchName)
-						return cb();
-					});	
-			}, function cancelled() {
-				logger.info('Cancelled');
-				return cb(mainMenu);
+			// Deprecate this
+			{
+				type: 'input',
+				name: 'number',
+				message: 'FULL BRANCH NAME (to be deprecated):',
+				
+				// For now, require the full name of the branch
+				// TODO: in the future, ticket/branch will have already been accepted by the time the user gets to this menu
+
+				/*validate: function(val) {
+					if (val && val.match(/^\d+$/)) {
+						return true;
+					} else {
+						return 'Please enter an integer value';
+					}
+				}*/
+			},
+
+			// Merge data
+			{
+				type: 'input',
+				name: 'merge',
+				message: 'Merge Title:'
+			},
+			{
+				type: 'input',
+				name: 'description',
+				message: 'Merge Description:'
+			},
+
+			// Ticket data
+			{
+				type: 'input',
+				name: 'location',
+				message: 'Location:'
+			},
+			{
+				type: 'input',
+				name: 'tests',
+				message: 'Tests (Verify that...):'
+			},
+			{
+				type: 'input',
+				name: 'reported',
+				message: 'Reported By:',
+				default: null
+			}
+		];
+
+		// If there are uncommitted changes, prompt the user for a commit message
+		if (res.files.length > 0) {
+			questions.splice(1, 0, {
+				type: 'input',
+				name: 'commitMsg',
+				message: 'Commit message:',
 			});
-	});
-}
+		}
 
-function mergeBranch(cb) {
-	var questions = [
+		inquirer.prompt(questions).then(function(answers) {
+			
+			var data = {
+				ticketName: answers.number,
+				ticketNumber: answers.number,
+				commitMsg: answers.commitMsg,
+				mergeTitle: answers.merge,				// Merge request title description
+				mergeDescription: answers.description,	// Merge request description
+				location: answers.location,
+				tests: answers.tests,
+				reported: answers.reported,
+			};
+
+			logger.warning('No merge request is made because this feature is a WIP');
+		});
+	});
+
+	/*var questions = [
 		{
 			type: 'input',
 			name: 'number',
@@ -314,13 +332,13 @@ function mergeBranch(cb) {
 			// For now, require the full name of the branch
 			// TODO: in the future, ticket/branch will have already been accepted by the time the user gets to this menu
 
-			/*validate: function(val) {
-				if (val && val.match(/^\d+$/)) {
-					return true;
-				} else {
-					return 'Please enter an integer value';
-				}
-			}*/
+			// validate: function(val) {
+			// 	if (val && val.match(/^\d+$/)) {
+			// 		return true;
+			// 	} else {
+			// 		return 'Please enter an integer value';
+			// 	}
+			// }
 		},
 		{
 			type: 'input',
@@ -415,9 +433,9 @@ function mergeBranch(cb) {
 				})
 
 				//TODO: Cuz if it does exist, just do a regular ol push
-				/*.push('origin', data.ticketNumber, function() {
-					log('pushed :)');
-				})*/
+				// .push('origin', data.ticketNumber, function() {
+				// 	log('pushed :)');
+				// })
 
 				.then(function() {
 					logger.info('Created merge request');
@@ -434,7 +452,7 @@ function mergeBranch(cb) {
 					});
 				});
 		});
-	});
+	});*/
 }
 
 function updateBranch(cb) {
@@ -540,9 +558,15 @@ function preferencesMenu(cb) {
 					},
 					default: prefs.initials || prefs.defaults.initials,
 				}).then(function(answer) {
+
+					// update the initials
 					prefs.initials = answer.initials.toLowerCase();
-					logger.info('Initials set to ' + prefs.initials);
-					return cb();
+
+					// reload local branches based on the user's new initials
+					loadLocalBranches(function() {
+						logger.info('Initials set to ' + prefs.initials);
+						return cb();
+					});
 				});
 				break;
 			case 'sprint':
@@ -575,8 +599,8 @@ function ticketsMenu(cb) {
 				name: 'action',
 				message: 'Tickets: What would you like to do?',
 				choices: [
+					{ name: 'Set active ticket', value: 'active' },
 					{ name: 'Create ticket', value: 'ticket' },
-					{ name: 'Create branch', value: 'create' },
 					{ name: 'Prepare for merge request', value: 'merge' },
 					{ name: 'Prepare for hotfix merge request', value: 'hotfix' },
 					{ name: 'Update branch', value: 'update' },
@@ -586,10 +610,10 @@ function ticketsMenu(cb) {
 		]
 	).then(function(choice) {
 		switch(choice.action) {
+			case 'active':
+				return selectActiveTicket(ticketsMenu);
 			case 'ticket':
 				return createTicket(ticketsMenu);
-			case 'create':
-				return createBranch(ticketsMenu);
 			case 'merge':
 				return mergeBranch(ticketsMenu);
 			case 'hotfix':
@@ -607,6 +631,107 @@ function ticketsMenu(cb) {
 				}
 		}
 	});
+}
+
+function selectActiveTicket(cb) {
+
+	// Grab the user's active tickets and sort them by priority
+	var ticketNames = _.map(prefs.assembla.tickets, function(n) {
+		var name = n.status + ': ' + n.number + ' | ' + n.summary;
+		var color = 'white';
+		switch (n.priority) {
+			case 1: color = 'red'; break;		// Highest
+			case 2: color = 'yellow'; break;	// High
+			case 3: color = 'white'; break;		// Normal
+			case 4: color = 'cyan'; break;		// Low
+			case 5: color = 'blue'; break;		// Lowest
+		}
+		return { name: chalk[color](name), value: n.id };
+	});
+
+	ticketNames = _.sortBy(ticketNames, function(n) { return n.priority; });
+
+	// List the tickets in a picklist
+	var questions = [
+		{
+			type: 'list',
+			name: 'ticket_id',
+			message: 'Ticket',
+			choices: ticketNames,
+		},
+	];
+
+	inquirer.prompt(questions).then(function(choice) {
+
+		prefs.activeTicket = _.find(prefs.assembla.tickets, function(n) { return n.id === choice.ticket_id; });
+		logger.info('Active ticket set to #' + prefs.activeTicket.number + ' - ' + prefs.activeTicket.summary);
+
+		var branch = prefs.findBranch(prefs.activeTicket.number);
+		
+		// If there's already a branch associated with the ticket, check it out
+		if (branch !== undefined) {
+			checkoutBranch(branch, false, cb);
+		} else {
+
+			// If not, prompt the user for a name and create the branch
+			logger.log('No branch exists yet for this ticket. Please enter a short branch name.');
+
+			var q = [
+				{
+					type: 'input',
+					name: 'branch_name',
+					message: 'Branch Name',
+					validate: function(val) {
+						if (val && val.length + prefs.initials.length + 4 < 50) {
+							return true;
+						} else {
+							return 'Please enter a shorter name.';
+						}
+					}
+				},
+			];
+
+			inquirer.prompt(q).then(function(c) {
+
+				var branchName = branchNameFormula(prefs.activeTicket.number, c.branch_name);
+
+				confirm('New branch will be called "' + branchName + '". Cool?')
+					.then(function confirmed() {
+						checkoutBranch(branchName, true, cb);
+					}, function cancelled() {
+						logger.info('Cancelled');
+						prefs.activeTicket = null;
+						cb(mainMenu);
+					});
+			});
+		}
+	});
+}
+
+function checkoutBranch(branch, isNewBranch, cb) {
+	if (isNewBranch) {
+		git
+			.checkoutLocalBranch(branch, function(err) {
+				if (err) {
+					return logger.error(err);
+				}
+			})
+			.then(function() {
+				logger.info('Working from the ' + branch + ' branch');
+				cb();
+			});
+	} else {
+		git
+			.checkout(branch, function(err) {
+				if (err) {
+					return logger.error(err);
+				}
+			})
+			.then(function() {
+				logger.info('Working from the ' + branch + ' branch');
+				cb();
+			});
+	}
 }
 
 function repoMenu(cb) {
