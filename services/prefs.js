@@ -10,6 +10,7 @@ var prefs = {
 		initials: 'aa',
 		sprint: '1.0',
 		repoCursor: 'website',
+		spaceTool: 'dn-D2MrQSr44o3acwqjQXA',
 		assembla: {
 			space_tools: [],
 			users: [],

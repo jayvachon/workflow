@@ -18,6 +18,7 @@ var menu 		= require('inquirer-menu');
 var Spinner     = CLI.Spinner;
 var GitHubApi   = require('github');
 var _           = require('lodash');
+var async		= require('async');
 var git         = require('simple-git')();
 var touch       = require('touch');
 var fs          = require('fs');
@@ -92,6 +93,8 @@ function init() {
 		prefs.assembla = data;
 		logger.log('Data loaded successfully! Welcome to Workflow :)\n');
 
+		logger.log(prefs.assembla.space_tools);
+
 		// If this is the first time Workflow has been loaded, bring the user to the preferences menu
 		if (!prefs.initialized) {
 
@@ -139,6 +142,7 @@ function setRepoCursor(repo) {
 	var path = config.settings.root + repo.relativePath + repo.repo + '\\';
 	git.cwd(path);
 	prefs.repoCursor = repo.name;
+	prefs.spaceTool = prefs.findSpaceTool(repo.name).id;
 }
 function setRepoCursorByIndex(idx) {
 	setRepoCursor(config.settings.repos[idx]);
@@ -248,24 +252,6 @@ function mergeBranch(cb) {
 
 		var questions = [
 
-			// Deprecate this
-			{
-				type: 'input',
-				name: 'number',
-				message: 'FULL BRANCH NAME (to be deprecated):',
-				
-				// For now, require the full name of the branch
-				// TODO: in the future, ticket/branch will have already been accepted by the time the user gets to this menu
-
-				/*validate: function(val) {
-					if (val && val.match(/^\d+$/)) {
-						return true;
-					} else {
-						return 'Please enter an integer value';
-					}
-				}*/
-			},
-
 			// Merge data
 			{
 				type: 'input',
@@ -309,8 +295,6 @@ function mergeBranch(cb) {
 		inquirer.prompt(questions).then(function(answers) {
 			
 			var data = {
-				ticketName: answers.number,
-				ticketNumber: answers.number,
 				commitMsg: answers.commitMsg,
 				mergeTitle: answers.merge,				// Merge request title description
 				mergeDescription: answers.description,	// Merge request description
@@ -319,7 +303,41 @@ function mergeBranch(cb) {
 				reported: answers.reported,
 			};
 
+			var ticketNumber = prefs.activeTicket.number;
+			var mergeTitle = prefs.sprint + ' ' + data.mergeTitle + ' re #' + ticketNumber;
+			var mergeDescription = 'test #' + ticketNumber + '\n' + data.mergeDescription;
+
+			// TODO: properly format this url using the correct space tool and ticket name (is it ticket name?)
+			// var mergeRequestUrl = 'https://app.assembla.com/spaces/oaftrac/git-18/compare/oaftrac.website:' + prefs.activeTicket.summary + '...oaftrac.website:develop';
+
+			var ticketDescription = 'TD: \n\n' + // TODO: insert existing TD from ticket here
+				'L:\n' + data.location + '\n\n' + 
+				'T:\n' + data.tests + '\n\n' +
+				(data.reported === '' ? '' : 'RB:\n' + data.reported);
+
+			var ticketDescriptionUrl = 'https://app.assembla.com/spaces/oaftrac/tickets/' + ticketNumber;
+
+			async.parallel([
+
+				// Post the merge request
+				function(cb) {
+					// api.
+				},
+
+				// Update the ticket content
+				function(cb) {
+
+				}
+			], function(err, results) {
+				// Open the relevant web pages
+				// open(mergeRequestUrl);
+				// open(ticketDescriptionUrl);
+				cb();
+			});
+
 			logger.warning('No merge request is made because this feature is a WIP');
+
+
 		});
 	});
 
@@ -455,7 +473,8 @@ function mergeBranch(cb) {
 	});*/
 }
 
-function updateBranch(cb) {
+// deprecate
+/*function updateBranch(cb) {
 
 	var questions = [
 		{
@@ -466,13 +485,13 @@ function updateBranch(cb) {
 			// For now, require the full name of the branch
 			// TODO: in the future, ticket/branch will have already been accepted by the time the user gets to this menu
 
-			/*validate: function(val) {
-				if (val && val.match(/^\d+$/)) {
-					return true;
-				} else {
-					return 'Please enter an integer value';
-				}
-			}*/
+			// validate: function(val) {
+			// 	if (val && val.match(/^\d+$/)) {
+			// 		return true;
+			// 	} else {
+			// 		return 'Please enter an integer value';
+			// 	}
+			// }
 		},
 		{
 			type: 'input',
@@ -500,14 +519,14 @@ function updateBranch(cb) {
 			.pull(function() {
 				log('merging develop...');
 			})
-			.checkout(data.ticketNumber)*/
+			.checkout(data.ticketNumber)
 
 			// TODO: only make a commit if there are files to commit
 			.add('.')
 			.commit(data.commitMsg)
-			/*.mergeFromTo('develop', data.ticketNumber, function() {
-				log('pushing to remote...');
-			})*/
+			// .mergeFromTo('develop', data.ticketNumber, function() {
+			// 	log('pushing to remote...');
+			// })
 
 			// TODO: check if remote exists before running this
 			.push(['-u', 'origin', data.ticketNumber], function () {
@@ -518,7 +537,7 @@ function updateBranch(cb) {
 				return cb();
 			});
 	});
-}
+}*/
 
 function hotfixMergeBranch(cb) {
 	// TODO
@@ -600,10 +619,9 @@ function ticketsMenu(cb) {
 				message: 'Tickets: What would you like to do?',
 				choices: [
 					{ name: 'Set active ticket', value: 'active' },
-					{ name: 'Create ticket', value: 'ticket' },
-					{ name: 'Prepare for merge request', value: 'merge' },
-					{ name: 'Prepare for hotfix merge request', value: 'hotfix' },
-					{ name: 'Update branch', value: 'update' },
+					{ name: 'Create new ticket', value: 'ticket' },
+					{ name: 'Make merge request', value: 'merge' },
+					// { name: 'Make hotfix merge request', value: 'hotfix' },
 					{ name: 'Back', value: 'back' },
 				]
 			}
@@ -621,8 +639,6 @@ function ticketsMenu(cb) {
 				//hotfixMergeBranch(ticketsMenu);
 				logger.warning('Hotfix not yet implemented');
 				return cb();
-			case 'update':
-				return updateBranch(ticketsMenu);
 			case 'back':
 				try {
 					return cb();
