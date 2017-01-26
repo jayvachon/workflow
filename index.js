@@ -93,7 +93,8 @@ function init() {
 		prefs.assembla = data;
 		logger.log('Data loaded successfully! Welcome to Workflow :)\n');
 
-		logger.log(prefs.assembla.space_tools);
+		//logger.log(prefs.assembla.space_tools);
+		// logger.log(prefs.activeTicket);
 
 		// If this is the first time Workflow has been loaded, bring the user to the preferences menu
 		if (!prefs.initialized) {
@@ -620,6 +621,7 @@ function ticketsMenu(cb) {
 				choices: [
 					{ name: 'Set active ticket', value: 'active' },
 					{ name: 'Create new ticket', value: 'ticket' },
+					{ name: 'Open active ticket in browser', value: 'browser' },
 					{ name: 'Make merge request', value: 'merge' },
 					// { name: 'Make hotfix merge request', value: 'hotfix' },
 					{ name: 'Back', value: 'back' },
@@ -632,6 +634,9 @@ function ticketsMenu(cb) {
 				return selectActiveTicket(ticketsMenu);
 			case 'ticket':
 				return createTicket(ticketsMenu);
+			case 'browser':
+				open('https://app.assembla.com/spaces/oaftrac/tickets/' + prefs.activeTicket.number);
+				return ticketsMenu(mainMenu);
 			case 'merge':
 				return mergeBranch(ticketsMenu);
 			case 'hotfix':
@@ -679,7 +684,13 @@ function selectActiveTicket(cb) {
 
 	inquirer.prompt(questions).then(function(choice) {
 
-		prefs.activeTicket = _.find(prefs.assembla.tickets, function(n) { return n.id === choice.ticket_id; });
+		var selectedTicket = _.find(prefs.assembla.tickets, function(n) { return n.id === choice.ticket_id; });
+
+		if (selectedTicket.number === prefs.activeTicket.number) {
+			logger.info('Ticket #' + selectedTicket.number + ' is already the active ticket');
+			return cb(mainMenu);
+		}
+
 		logger.info('Active ticket set to #' + prefs.activeTicket.number + ' - ' + prefs.activeTicket.summary);
 
 		var branch = prefs.findBranch(prefs.activeTicket.number);
